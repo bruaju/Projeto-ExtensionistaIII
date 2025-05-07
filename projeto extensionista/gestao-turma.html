@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Projeto de Extensão - Gestão de Turmas</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Projeto de Extensão: Tecnologia na Educação</h1>
+    <p>Capacitando professores para o futuro</p>
+  </header>
+
+  <nav>
+    <a href="index.html">Sobre</a>
+    <a href="cursos.html">Mini Cursos</a>
+    <a href="ia.html">IA</a>
+    <a href="ti.html">Tecnologia</a>
+    <a href="gestao-turma.html">Gestão de Turmas</a>
+  </nav>
+
+  <div class="container" id="turmas">
+    <h2>Gestão de Turmas</h2>
+
+    <label>Média Escolar (ex: 6):</label>
+    <input type="number" id="media-escolar" value="6" min="0" max="10" step="0.1"/>
+
+    <h3>Adicionar Turma</h3>
+    <input type="text" id="novaTurma" placeholder="Nome da Turma"/>
+    <button onclick="adicionarTurma()">Criar Turma</button>
+
+    <div id="turmasContainer"></div>
+  </div>
+
+  <footer>
+    <p>&copy; 2025 Projeto de Extensão. Todos os direitos reservados.</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    let turmas = JSON.parse(localStorage.getItem('turmas')) || {};
+    let mediaEscolar = parseFloat(localStorage.getItem('mediaEscolar')) || 6;
+    let charts = {};
+
+    document.getElementById('media-escolar').value = mediaEscolar;
+
+    function salvarTurmas() {
+      localStorage.setItem('turmas', JSON.stringify(turmas));
+      localStorage.setItem('mediaEscolar', document.getElementById('media-escolar').value);
+    }
+
+    function adicionarTurma() {
+      const nome = document.getElementById('novaTurma').value.trim();
+      if (nome && !turmas[nome]) {
+        turmas[nome] = [];
+        renderizarTurmas();
+        salvarTurmas();
+        document.getElementById('novaTurma').value = '';
+      }
+    }
+
+    function adicionarAluno(turma) {
+      const nome = prompt("Nome do aluno:");
+      if (nome) {
+        turmas[turma].push({ nome, nota: 0 });
+        renderizarTurmas();
+        salvarTurmas();
+      }
+    }
+
+    function atualizarNota(turma, index, nota) {
+      nota = Math.min(10.0, parseFloat(nota));
+      turmas[turma][index].nota = nota;
+      renderizarTurmas();
+      salvarTurmas();
+    }
+
+    function renderizarTurmas() {
+      const scrollPosition = window.scrollY;
+      const container = document.getElementById('turmasContainer');
+      container.innerHTML = '';
+
+      for (let turma in turmas) {
+        const div = document.createElement('div');
+        let mediaTurma = 0;
+
+        const tabela = turmas[turma].map((aluno, i) => {
+            mediaTurma += aluno.nota;
+            return ` 
+              <tr>
+                <td>${aluno.nome}</td>
+                <td><input type="number" min="0" max="10" step="0.1" value="${aluno.nota}" onchange="atualizarNota('${turma}', ${i}, this.value)"></td>
+                <td>${aluno.nota >= mediaEscolar ? '✅ Na média' : '❌ Abaixo'}</td>
+              </tr>
+            `;
+        }).join('');
+
+        mediaTurma /= turmas[turma].length || 1;
+        mediaTurma = Math.min(10.0, mediaTurma);
+
+        div.innerHTML = ` 
+            <h4>${turma} - Média da turma: ${mediaTurma.toFixed(2)}</h4>
+            <button onclick="adicionarAluno('${turma}')">Adicionar Aluno</button>
+            <button onclick="limparTurma('${turma}')">Limpar Dados</button>
+            <button onclick="exportarParaPDF('${turma}', ${mediaTurma.toFixed(2)})">Exportar para PDF</button>
+            <button onclick="excluirTabela('${turma}')">Excluir Tabela</button>
+            <canvas id="grafico_${turma}" width="400" height="150"></canvas>
+            <table>
+              <thead><tr><th>Aluno</th><th>Nota</th><th>Status</th></tr></thead>
+              <tbody>${tabela}</tbody>
+            </table>
+        `;
+
+        container.appendChild(div);
+        renderizarGrafico(turma);
+      }
+      window.scrollTo(0, scrollPosition);
+    }
+
+    function renderizarGrafico(turma) {
+      const ctx = document.getElementById(`grafico_${turma}`).getContext('2d');
+      const dados = [];
+      const labels = [];
+
+      turmas[turma].forEach(aluno => {
+        labels.push(aluno.nome);
+        dados.push(aluno.nota);
+      });
+
+      if (charts[turma]) charts[turma].destroy();
+
+      charts[turma] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Notas por Aluno',
+            data: dados,
+            backgroundColor: dados.map(n => n >= mediaEscolar ? '#4caf50' : '#f44336')
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw}` } }
+          },
+          scales: { y: { beginAtZero: true, suggestedMax: 10 } }
+        }
+      });
+    }
+
+    function exportarParaPDF(turma, mediaTurma) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      let y = 20;
+
+      doc.setFontSize(18);
+      doc.setTextColor(0, 102, 204);
+      doc.setFont("helvetica", "bold");
+      doc.text("Relatório de Gestão de Turmas", 10, y);
+      y += 10;
+
+      doc.setFontSize(14);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Média da turma "${turma}": ${mediaTurma.toFixed(2)}`, 10, y);
+      y += 10;
+
+      doc.setLineWidth(0.5);
+      doc.line(10, y, 200, y);
+      y += 10;
+
+      doc.setFontSize(12);
+      doc.text("Notas dos Alunos:", 10, y);
+      y += 10;
+
+      const col1X = 10, col2X = 90, col3X = 150;
+      const rowHeight = 10;
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255, 255, 255);
+      doc.setFillColor(0, 102, 204);
+      doc.rect(col1X, y, 40, rowHeight, "F");
+      doc.rect(col2X, y, 60, rowHeight, "F");
+      doc.rect(col3X, y, 40, rowHeight, "F");
+      doc.text("Aluno", col1X + 2, y + 6);
+      doc.text("Nota", col2X + 2, y + 6);
+      doc.text("Status", col3X + 2, y + 6);
+      y += rowHeight;
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0);
+
+      turmas[turma].forEach(aluno => {
+        let nomeCortado = aluno.nome.length > 30 ? aluno.nome.substring(0, 30) + '...' : aluno.nome;
+        const nomeLinhas = doc.splitTextToSize(nomeCortado, 38);
+        const alturaTexto = nomeLinhas.length * 6;
+        const alturaFinal = Math.max(rowHeight, alturaTexto);
+
+        doc.rect(col1X, y, 40, alturaFinal);
+        doc.rect(col2X, y, 60, alturaFinal);
+        doc.rect(col3X, y, 40, alturaFinal);
+
+        doc.text(nomeLinhas, col1X + 2, y + 6);
+        doc.text(aluno.nota.toString(), col2X + 2, y + 6);
+        doc.text(aluno.nota >= mediaEscolar ? '✅ Na média' : '❌ Abaixo', col3X + 2, y + 6);
+
+        y += alturaFinal;
+      });
+
+      y += 10;
+      const canvas = document.getElementById(`grafico_${turma}`);
+      const imgData = canvas.toDataURL("image/png");
+      doc.addImage(imgData, 'PNG', 10, y, 180, 80);
+      y += 90;
+
+      doc.setFontSize(10);
+      doc.text("Relatório gerado pelo sistema de gestão de turmas.", 10, y);
+      doc.save(`relatorio_${turma}.pdf`);
+    }
+
+    function limparTurma(turma) {
+      turmas[turma] = [];
+      salvarTurmas();
+      renderizarTurmas();
+    }
+
+    function excluirTabela(turma) {
+      delete turmas[turma];
+      salvarTurmas();
+      renderizarTurmas();
+    }
+
+    window.onload = () => {
+      renderizarTurmas();
+    };
+
+    document.getElementById('media-escolar').addEventListener('input', () => {
+      mediaEscolar = parseFloat(document.getElementById('media-escolar').value);
+      salvarTurmas();
+      renderizarTurmas();
+    });
+  </script>
+</body>
+</html>
